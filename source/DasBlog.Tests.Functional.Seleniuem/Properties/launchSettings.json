@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "DasBlog.Tests.Functional.Selenium": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

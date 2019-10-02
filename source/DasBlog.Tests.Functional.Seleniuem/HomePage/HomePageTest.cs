@@ -18,10 +18,11 @@ namespace DasBlog.Tests.Functional.Selenium
 		public HomePageTest(SeleniumServerFactory<Startup> server)
 		{
 			Server = server;
+			Server.RootUri = "https://localhost:5001/";
 			Client = server.CreateClient(); //weird side effecty thing here. This call shouldn't be required for setup, but it is.
 
 			var opts = new ChromeOptions();
-			opts.AddArgument("--headless"); //Optional, comment this out if you want to SEE the browser window
+			//opts.AddArgument("--headless"); //Optional, comment this out if you want to SEE the browser window
 			opts.SetLoggingPreference(OpenQA.Selenium.LogType.Browser, LogLevel.All);
 
 			var driver = new RemoteWebDriver(opts);
@@ -39,21 +40,21 @@ namespace DasBlog.Tests.Functional.Selenium
 
 		[Fact]
 		[Trait("Home", "FunctionalTest")]
-		public void ThereIsAnH1()
+		public void ThereIsAnH2()
 		{
 			Browser.Navigate().GoToUrl(Server.RootUri);
 
-			var headerSelector = By.TagName("h1");
-			Assert.Equal("HANSELMINUTES PODCAST\r\nby Scott Hanselman", Browser.FindElement(headerSelector).Text);
+			var headerSelector = By.TagName("h2");
+			Assert.Equal("Congratulations, you've installed dasBlog!", Browser.FindElement(headerSelector).Text);
 		}
 
 		[Fact]
 		[Trait("Home", "FunctionalTest")]
-		public void KevinScottTestThenGoHome()
+		public void GoToTheFirstBlogPostThenBackHome()
 		{
-			Browser.Navigate().GoToUrl(Server.RootUri + "/631/how-do-you-become-a-cto-with-microsofts-cto-kevin-scott");
+			Browser.Navigate().GoToUrl(Server.RootUri + "/congratulations-youve-installed-dasblog");
 
-			var headerSelector = By.TagName("h1");
+			var headerSelector = By.TagName("h2");
 			var link = Browser.FindElement(headerSelector);
 			link.Click();
 			Assert.Equal(Browser.Url.TrimEnd('/'), Server.RootUri); //WTF

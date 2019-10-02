@@ -21,6 +21,7 @@ namespace DasBlog.Tests.Functional.Selenium
 		public SeleniumServerFactory()
 		{
 			ClientOptions.BaseAddress = new Uri("https://localhost"); //will follow redirects by default
+			RootUri = "https://localhost:5001";
 
 			_process = new Process()
 			{

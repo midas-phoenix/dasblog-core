@@ -34,6 +34,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DasBlog.Services", "DasBlog
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DasBlog.Tests.Functional.Selenium", "DasBlog.Tests.Functional.Seleniuem\DasBlog.Tests.Functional.Selenium.csproj", "{A408E078-7F53-416A-98B7-92ED3E2A959C}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DasBlog.Tests.Support", "DasBlog.Tests\Support\DasBlog.Tests.Support.csproj", "{C27034B5-A54D-4081-B8FB-83CF6966419C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug - All|Any CPU = Debug - All|Any CPU
@@ -83,6 +85,12 @@ Global
 		{A408E078-7F53-416A-98B7-92ED3E2A959C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A408E078-7F53-416A-98B7-92ED3E2A959C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A408E078-7F53-416A-98B7-92ED3E2A959C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C27034B5-A54D-4081-B8FB-83CF6966419C}.Debug - All|Any CPU.ActiveCfg = Debug|Any CPU
+		{C27034B5-A54D-4081-B8FB-83CF6966419C}.Debug - All|Any CPU.Build.0 = Debug|Any CPU
+		{C27034B5-A54D-4081-B8FB-83CF6966419C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C27034B5-A54D-4081-B8FB-83CF6966419C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C27034B5-A54D-4081-B8FB-83CF6966419C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C27034B5-A54D-4081-B8FB-83CF6966419C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -91,6 +99,7 @@ Global
 		{B734F9FD-539D-4FD3-9343-5BD5C18FF699} = {800E3AC8-FF13-43CE-8C09-6F4A2867D445}
 		{3EA4B6D5-6AC0-4235-AAD3-27FFBD158FC6} = {F0F076E7-9863-46B7-8C3C-5C220D4BC118}
 		{A408E078-7F53-416A-98B7-92ED3E2A959C} = {F0F076E7-9863-46B7-8C3C-5C220D4BC118}
+		{C27034B5-A54D-4081-B8FB-83CF6966419C} = {F0F076E7-9863-46B7-8C3C-5C220D4BC118}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8F3ACFB8-CB52-4953-A1CF-4151E2789889}
