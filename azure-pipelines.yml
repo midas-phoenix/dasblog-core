@@ -35,7 +35,7 @@ steps:
   inputs:
     command: build
     projects: '**/*.sln'
-    arguments: '--no-restore --configuration Release --version-suffix "" -p:VersionPrefix=2.0.$(Build.BuildId) -p:FileVersion=2.0.$(Build.BuildId).0
+    arguments: '--no-restore --configuration Release --version-suffix "" -p:VersionPrefix=2.0.$(Build.BuildId) -p:FileVersion=2.0.$(Build.BuildId).0'
 
 - script: dotnet test source/DasBlog.Tests/UnitTests/ --logger trx;LogfileName=test_results.xml --results-directory $(System.DefaultWorkingDirectory)/test_results --filter Category=UnitTest
   displayName: Run Unit Tests on Windows
@@ -46,7 +46,7 @@ steps:
   condition: and(always(), eq(variables['imageName'], 'windows-2019'))
   inputs:
     testRunner: VSTest
-    testResultsFiles: '**/*.xml'
+    testResultsFiles: '**/*.xm  l'
     searchFolder: '$(System.DefaultWorkingDirectory)/test_results'
 
 - task: DotNetCoreCLI@2
