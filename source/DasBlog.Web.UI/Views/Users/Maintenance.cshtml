@@ -3,25 +3,31 @@
 
 @{
     ViewBag.Title = "User Maintenance";
-    Layout = "_UsersLayout";
+    Layout = "_Layout";
 }
 
+<div class="pull-left affix" role="navigation">
+    @await Component.InvokeAsync("UserList")
+</div>
+
 <form asp-action="Maintenance" asp-controller="Users" method="get">
+
+
     @if (ViewBag.SubViewName == Constants.ViewUserSubView)
     {
-        <input type="submit" class="btn btn-primary btn-default" name="maintenanceMode" value="@Constants.UsersEditMode"/>
-        <input type="submit" class="btn" name="maintenanceMode" value="@Constants.UsersDeleteMode"/>       
+        <input type="submit" class="btn btn-primary btn-default" name="maintenanceMode" value="@Constants.UsersEditMode" />
+        <input type="submit" class="btn" name="maintenanceMode" value="@Constants.UsersDeleteMode" />
     }
     else
     {
-        <input type="submit" class="btn" name="maintenanceMode" value="@Constants.UsersEditMode" disabled/>
-        <input type="submit" class="btn" name="maintenanceMode" value="@Constants.UsersDeleteMode" disabled/>       
+        <input type="submit" class="btn" name="maintenanceMode" value="@Constants.UsersEditMode" disabled />
+        <input type="submit" class="btn" name="maintenanceMode" value="@Constants.UsersDeleteMode" disabled />
     }
 </form>
 
 <h2>@ViewBag.Title</h2>
 
-<partial name="(string)ViewBag.SubViewName" model="Model" />
+<partial name="@ViewBag.SubViewName" model="Model" />
 
 @*subview name is Edit or Delete or possibly something else*@
 

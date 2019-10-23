@@ -173,8 +173,7 @@ namespace DasBlog.Web.Controllers
 		/// if the operation succeeds</returns>
 		[ValidateAntiForgeryToken]
 		[HttpPost("/users/Maintenance/{email?}")]
-		public IActionResult Maintenance(string submitAction, string originalEmail
-		  ,UsersViewModel uvm)
+		public IActionResult Maintenance(string submitAction, string originalEmail, UsersViewModel uvm)
 		{
 			VerifyParam(() =>
 			  submitAction == Constants.SaveAction
