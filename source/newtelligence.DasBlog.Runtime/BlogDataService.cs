@@ -46,6 +46,7 @@ using System.IO;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
+using ImageMagick;
 using NodaTime;
 
 namespace newtelligence.DasBlog.Runtime
@@ -101,7 +102,12 @@ namespace newtelligence.DasBlog.Runtime
         private AutoResetEvent trackingQueueEvent;
         private Queue trackingQueue;
         private Thread trackingHandlerThread;
-        private AutoResetEvent sendMailInfoQueueEvent;
+
+		private AutoResetEvent imgCompressQueueEvent;
+		private Queue imgCompressQueue;
+		private Thread imgCompressHandlerThread;
+
+		private AutoResetEvent sendMailInfoQueueEvent;
         private Queue sendMailInfoQueue;
         private Thread sendMailInfoHandlerThread;
         private ILoggingDataService loggingService;
@@ -147,18 +153,27 @@ namespace newtelligence.DasBlog.Runtime
             trackingQueueEvent = new AutoResetEvent(false);
             trackingHandlerThread = new Thread(new ThreadStart(this.TrackingHandler));
             trackingHandlerThread.IsBackground = true;
-            trackingHandlerThread.Start();
+            // trackingHandlerThread.Start();
             
             sendMailInfoQueue = new Queue();
             sendMailInfoQueueEvent = new AutoResetEvent(false);
             sendMailInfoHandlerThread = new Thread(new ThreadStart(this.SendMailHandler));
             sendMailInfoHandlerThread.IsBackground = true;
             sendMailInfoHandlerThread.Start();
-            
-            allComments = new CommentFile(contentBaseDirectory);
+
+			imgCompressQueue = new Queue();
+			imgCompressQueueEvent = new AutoResetEvent(false);
+			imgCompressHandlerThread = new Thread(new ThreadStart(ImageCompressionHandler))
+			{
+				IsBackground = true
+			};
+			imgCompressHandlerThread.Start();
+
+
+			allComments = new CommentFile(contentBaseDirectory);
 
             //OmarS: now we want to initialize the EntryIdCache so this doesn't happen elsewhere later on
-//            InitCache();
+			//InitCache();
         }
 
 
@@ -1431,7 +1446,45 @@ namespace newtelligence.DasBlog.Runtime
             }
         }
 
-        private void TrackingHandler()
+		private void ImageCompressionHandler()
+		{
+			while (true)
+			{
+				FileInfo fileInfo;
+
+				// block the thread from entering the next loop till trackingQueueEvent.Set() is called
+				imgCompressQueueEvent.WaitOne();
+				while (imgCompressQueue.Count != 0)
+				{
+					try
+					{
+						lock (imgCompressQueue.SyncRoot)
+						{
+							fileInfo = imgCompressQueue.Dequeue() as FileInfo;
+						}
+						if (fileInfo != null)
+						{
+							InternalCompressImage(fileInfo);
+						}
+
+						if (imgCompressQueue.Count == 0)
+						{
+							break;
+						}
+					}
+					catch (Exception ex)
+					{
+						if (loggingService != null)
+						{
+							loggingService.AddEvent(new EventDataItem(EventCodes.Error, ex.ToString(), "Dequeue from ImageCompressionHandler"));
+						}
+					}
+				}
+			}
+
+		}
+
+		private void TrackingHandler()
         {
             while (true)
             {
@@ -1548,7 +1601,24 @@ namespace newtelligence.DasBlog.Runtime
             }
         }
 
-        void IBlogDataService.RunActions(object[] actions)
+		private void InternalCompressImage(FileInfo file)
+		{
+			try
+			{
+				var optimizer = new ImageOptimizer();
+				optimizer.Compress(file);
+			}
+			catch (FileNotFoundException ex)
+			{
+				
+			}
+			catch (Exception e)
+			{
+
+			}
+		}
+
+		void IBlogDataService.RunActions(object[] actions)
         {
             if (actions != null)
             {
