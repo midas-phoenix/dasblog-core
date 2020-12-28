@@ -206,6 +206,12 @@ namespace DasBlog.Services.ConfigFile.Interfaces
 
         bool EnableCaptcha { get; set; }
 
+        string RecaptchaSiteKey { get; set; }
+
+        string RecaptchaSecretKey { get; set; } 
+
+        double RecaptchaMinimumScore { get; set; }
+
         bool EnableReferralUrlBlackList404s { get; set; }
 
         bool EnableMovableTypeBlackList { get; set; }
@@ -333,7 +339,15 @@ namespace DasBlog.Services.ConfigFile.Interfaces
 
         string CheesySpamA { get; set; }
 
-        [XmlAnyElement]
+		bool UseAspxExtension { get; set; }
+
+		string SecurityScriptSources { get; set; }
+
+		string SecurityStyleSources { get; set; }
+
+		bool CookieConsentEnabled { get; set; }
+
+		[XmlAnyElement]
         XmlElement[] anyElements { get; set; }
 
         [XmlAnyAttribute]

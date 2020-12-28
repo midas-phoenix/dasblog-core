@@ -1,9 +1,10 @@
 ﻿using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 
 namespace DasBlog.Web.UI
 {
-	public class Program
+	public static class Program
 	{
 		public static void Main(string[] args)
 		{

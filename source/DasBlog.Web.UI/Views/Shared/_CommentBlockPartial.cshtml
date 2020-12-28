@@ -3,7 +3,7 @@
 @model ListCommentsViewModel
 @inject IDasBlogSettings dasBlogSettings
 
-@if (Model != null && Model.Comments != null)
+@if (dasBlogSettings.SiteConfiguration.EnableComments && Model?.Comments != null)
 {
     <hr />
     <h3 class="comment-section-title" id="@DasBlog.Core.Common.Constants.CommentsStartId">Comment Section</h3>
@@ -19,9 +19,16 @@
                 }
             }
         </div>
-        @if (dasBlogSettings.AreCommentsPermitted(Model.PostDate))
+        @if (Model.AllowComments && dasBlogSettings.AreCommentsPermitted(Model.PostDate))
         {
+            @if(Model.CurrentComment != null)
+            {
+            <partial name="_CommentAddPartial" model="Model.CurrentComment" />
+            }
+            else
+            {
             <partial name="_CommentAddPartial" model="new AddCommentViewModel() { TargetEntryId = Model.PostId }" />
+            }
         }
         else
         {
