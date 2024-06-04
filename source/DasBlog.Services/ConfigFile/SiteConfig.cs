@@ -51,14 +51,37 @@ namespace DasBlog.Services.ConfigFile
 	[XmlType("SiteConfig")]
 	public class SiteConfig : ISiteConfig
     {
-        public SiteConfig() { }
+        private string _root;
+        private string _cdnFrom;
+        private string _cdnTo;
+
+		public SiteConfig() { }
 
         public string Title { get; set; }
         public string Subtitle { get; set; }
         public string Theme { get; set; }
         public string Description { get; set; }
         public string Contact { get; set; }
-        public string Root { get; set; }
+        public string Root {
+            get
+            {
+                return _root;
+            }
+            set 
+            {
+                if ( !string.IsNullOrEmpty(value) )
+                {
+                    _root = value + (value.EndsWith("/")?"":"/");
+                }
+                else
+                {
+                    _root = value;
+                }
+            }
+        }
+		public string CdnFrom { get; set; }
+		public string CdnTo { get; set; }
+
 		public string AllowedHosts { get; set; }
 		public string Copyright { get; set; }
         public int RssDayCount { get; set; }
@@ -79,8 +102,11 @@ namespace DasBlog.Services.ConfigFile
         public bool SendTrackbacksByEmail { get; set; }
         public bool SendPingbacksByEmail { get; set; }
         public bool SendPostsByEmail { get; set; }
+        public bool EnableAboutView { get; set; }
+        public string TinyMCEApiKey { get; set; }
         public bool EnableBloggerApi { get; set; }
         public bool EnableComments { get; set; }
+        public bool AllowMarkdownInComments {get; set;}
         public bool EnableCommentApi { get; set; }
         public bool EnableConfigEditService { get; set; }
         public bool EnableEditService { get; set; }
@@ -89,7 +115,11 @@ namespace DasBlog.Services.ConfigFile
         public bool EnableTrackbackService { get; set; }
         public bool EnablePingbackService { get; set; }
         public bool EnableStartPageCaching { get; set; }
-        public bool EnableBlogrollDescription { get; set; }
+		public bool EnableRewritingHashtagsToCategoryLinks { get; set; }
+		public bool EnableRewritingBareLinksToEmbeddings { get; set; }
+		public bool EnableRewritingBareLinksToIcons { get; set; }
+
+		public bool EnableBlogrollDescription { get; set; }
         public bool EnableUrlRewriting { get; set; }
         public bool EnableCrossposts { get; set; }
         public bool UseUserCulture { get; set; }
@@ -145,6 +175,7 @@ namespace DasBlog.Services.ConfigFile
         public bool EncryptLoginPassword { get; set; }
         public bool EnableSmtpAuthentication { get; set; }
         public string SmtpUserName { get; set; }
+        public string SmtpFromEmail { get; set; }
         public string SmtpPassword { get; set; }
         public string RssLanguage { get; set; }
         public bool EnableSearchHighlight { get; set; }
@@ -214,5 +245,12 @@ namespace DasBlog.Services.ConfigFile
 		public string SecurityScriptSources { get; set; }
 
 		public string SecurityStyleSources { get; set; }
+
+		public string DefaultSources { get; set; }
+
+		public string MastodonServerUrl { get; set; }
+
+		public string MastodonAccount { get; set; }
+		public string PostPinnedToHomePage { get; set; }
 	}
 }

@@ -33,10 +33,10 @@ namespace DasBlog.Web.Mappers
 				.ForMember(dest => dest.IsPublic, opt => opt.MapFrom(src => src.IsPublic))
 				.ForMember(dest => dest.Syndicated, opt => opt.MapFrom(src => src.Syndicated))
 				.ForMember(dest => dest.PermaLink, opt => opt.MapFrom(src => _dasBlogSettings.GeneratePostUrl(src)))
-				.ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.Content.FindFirstImage()))
+				.ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.Content.FindHeroImage()))
 				.ForMember(dest => dest.VideoUrl, opt => opt.MapFrom(src => src.Content.FindFirstYouTubeVideo()))
-				.ForMember(dest => dest.CreatedDateTime, opt => opt.MapFrom(src => src.CreatedLocalTime))
-				.ForMember(dest => dest.ModifiedDateTime, opt => opt.MapFrom(src => src.ModifiedLocalTime));
+				.ForMember(dest => dest.CreatedDateTime, opt => opt.MapFrom(src => _dasBlogSettings.GetDisplayTime(src.CreatedUtc)))
+				.ForMember(dest => dest.ModifiedDateTime, opt => opt.MapFrom(src => _dasBlogSettings.GetDisplayTime(src.ModifiedUtc)));
 
 			CreateMap<PostViewModel, Entry>()
 				.ForMember(dest => dest.Title, opt => opt.MapFrom(src => src.Title))
@@ -61,12 +61,25 @@ namespace DasBlog.Web.Mappers
 				.ForMember(dest => dest.Name, opt => opt.MapFrom(src => src.Author))
 				.ForMember(dest => dest.Text, opt => opt.MapFrom(src => src.Content))
 				.ForMember(dest => dest.GravatarHashId, opt => opt.MapFrom(src => Utils.GetGravatarHash(src.AuthorEmail)))
-				.ForMember(dest => dest.Date, opt => opt.MapFrom(src => src.CreatedLocalTime))
+				.ForMember(dest => dest.Date, opt => opt.MapFrom(src => _dasBlogSettings.GetDisplayTime(src.CreatedUtc)))
 				.ForMember(dest => dest.HomePageUrl, opt => opt.MapFrom(src => src.AuthorHomepage))
 				.ForMember(dest => dest.BlogPostId, opt => opt.MapFrom(src => src.TargetEntryId))
 				.ForMember(dest => dest.CommentId, opt => opt.MapFrom(src => src.EntryId))
 				.ForMember(dest => dest.SpamState, opt => opt.MapFrom(src => src.SpamState))
-				.ForMember(dest => dest.IsPublic, opt => opt.MapFrom(src => src.IsPublic)); ;
+				.ForMember(dest => dest.IsPublic, opt => opt.MapFrom(src => src.IsPublic));
+
+			CreateMap<Comment, CommentAdminViewModel>()
+				.ForMember(dest => dest.Name, opt => opt.MapFrom(src => src.Author))
+				.ForMember(dest => dest.Text, opt => opt.MapFrom(src => src.Content))
+				.ForMember(dest => dest.GravatarHashId, opt => opt.MapFrom(src => Utils.GetGravatarHash(src.AuthorEmail)))
+				.ForMember(dest => dest.Date, opt => opt.MapFrom(src => _dasBlogSettings.GetDisplayTime(src.CreatedUtc)))
+				.ForMember(dest => dest.HomePageUrl, opt => opt.MapFrom(src => src.AuthorHomepage))
+				.ForMember(dest => dest.BlogPostId, opt => opt.MapFrom(src => src.TargetEntryId))
+				.ForMember(dest => dest.CommentId, opt => opt.MapFrom(src => src.EntryId))
+				.ForMember(dest => dest.SpamState, opt => opt.MapFrom(src => src.SpamState))
+				.ForMember(dest => dest.IsPublic, opt => opt.MapFrom(src => src.IsPublic))
+				.ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.AuthorEmail))
+				.ForMember(dest => dest.AuthorIPAddress, opt => opt.MapFrom(src => src.AuthorIPAddress));
 
 			CreateMap<AddCommentViewModel, Comment>()
 				.ForMember(dest => dest.Author, opt => opt.MapFrom(src => src.Name))
@@ -101,6 +114,9 @@ namespace DasBlog.Web.Mappers
 
 		private IList<CategoryViewModel> ConvertCategory(string category)
 		{
+			if (string.IsNullOrWhiteSpace(category))
+				return new List<CategoryViewModel>();
+
 			return category.Split(";").ToList().Select(c => new CategoryViewModel {
 													Category = c,
 													CategoryUrl = _dasBlogSettings.CompressTitle(c) })

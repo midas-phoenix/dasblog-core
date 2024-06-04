@@ -19,6 +19,10 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using reCAPTCHA.AspNetCore;
+using Markdig;
+using DasBlog.Core.Extensions;
+using System.Text.RegularExpressions;
+using DasBlog.Services.Site;
 
 namespace DasBlog.Web.Controllers
 {
@@ -34,12 +38,13 @@ namespace DasBlog.Web.Controllers
 		private readonly ILogger<BlogPostController> logger;
 		private readonly IBlogPostViewModelCreator modelViewCreator;
 		private readonly IMemoryCache memoryCache;
-        private readonly IRecaptchaService recaptcha;
+		private readonly IExternalEmbeddingHandler embeddingHandler;
+		private readonly IRecaptchaService recaptcha;
 
-
-		public BlogPostController(IBlogManager blogManager, IHttpContextAccessor httpContextAccessor, IDasBlogSettings dasBlogSettings, 
+		
+		public BlogPostController(IBlogManager blogManager, IHttpContextAccessor httpContextAccessor, IDasBlogSettings dasBlogSettings,
 									IMapper mapper, ICategoryManager categoryManager, IFileSystemBinaryManager binaryManager, ILogger<BlogPostController> logger,
-									IBlogPostViewModelCreator modelViewCreator, IMemoryCache memoryCache,IRecaptchaService recaptcha) 
+									IBlogPostViewModelCreator modelViewCreator, IMemoryCache memoryCache, IExternalEmbeddingHandler embeddingHandler, IRecaptchaService recaptcha)
 									: base(dasBlogSettings)
 		{
 			this.blogManager = blogManager;
@@ -51,7 +56,8 @@ namespace DasBlog.Web.Controllers
 			this.logger = logger;
 			this.modelViewCreator = modelViewCreator;
 			this.memoryCache = memoryCache;
-            this.recaptcha = recaptcha;
+			this.embeddingHandler = embeddingHandler;
+			this.recaptcha = recaptcha;
 		}
 
 		[AllowAnonymous]
@@ -65,6 +71,9 @@ namespace DasBlog.Web.Controllers
 			if (entry != null)
 			{
 				var pvm = mapper.Map<PostViewModel>(entry);
+				pvm.Content = embeddingHandler.InjectCategoryLinksAsync(pvm.Content).GetAwaiter().GetResult();
+				pvm.Content = embeddingHandler.InjectDynamicEmbeddingsAsync(pvm.Content).GetAwaiter().GetResult();
+				pvm.Content = embeddingHandler.InjectIconsForBareLinksAsync(pvm.Content).GetAwaiter().GetResult();
 
 				var lcvm = new ListCommentsViewModel
 				{
@@ -88,6 +97,14 @@ namespace DasBlog.Web.Controllers
 			}
 			else
 			{
+				// Post was not found. Let's see if it's a static page before we route user to home page.
+				var sp = blogManager.GetStaticPage(posttitle);
+				if(sp != null)	
+				{
+					var spvm = mapper.Map<StaticPageViewModel>(sp);
+					return View("LoadStaticPage", spvm);
+
+				}
 				return RedirectToAction("index", "home");
 			}
 		}
@@ -100,21 +117,23 @@ namespace DasBlog.Web.Controllers
 			var entry = blogManager.GetBlogPostByGuid(postid);
 			if (entry != null)
 			{
+				var pvm = mapper.Map<PostViewModel>(entry);
 
-				/*
-				 * Very old DasBlog links like
-				 * /PermaLink.aspx?guid=b5790285-2eb7-4198-ac1d-6cfbf20735a4
-				 * turn into 
-				 * /post/b5790285-2eb7-4198-ac1d-6cfbf20735a4 
-				 * (given correct IISrewrites)
-				 * but fails to render because the Comments are never loaded, 
-				 * so you'll get the post but it shows ZERO comments. 
-				 * Better to just redirect to the right URL
-				 * I can't figure how to redirect 302 correctly given a /blog baseURL, so for now at least it doesn't break 
-				 * and has the right canonical
-				 * 				//return RedirectToAction("Post", "BlogPost", new { title = lpvm?.Posts?.First().PermaLink });
-				 */
-				lpvm.Posts = new List<PostViewModel>() { mapper.Map<PostViewModel>(entry) };
+				var lcvm = new ListCommentsViewModel
+				{
+					Comments = blogManager.GetComments(entry.EntryId, false)
+									.Select(comment => mapper.Map<CommentViewModel>(comment)).ToList(),
+					PostId = entry.EntryId,
+					PostDate = entry.CreatedUtc,
+					CommentUrl = dasBlogSettings.GetCommentViewUrl(entry.Title),
+					ShowComments = dasBlogSettings.SiteConfiguration.ShowCommentsWhenViewingEntry,
+					AllowComments = entry.AllowComments
+				};
+				pvm.Comments = lcvm;
+				pvm.Content = embeddingHandler.InjectCategoryLinksAsync(pvm.Content).GetAwaiter().GetResult();
+				pvm.Content = embeddingHandler.InjectIconsForBareLinksAsync(pvm.Content).GetAwaiter().GetResult();
+				lpvm.Posts = new List<PostViewModel>() { pvm };
+
 				return SinglePostView(lpvm);
 			}
 			else
@@ -134,6 +153,7 @@ namespace DasBlog.Web.Controllers
 				if (entry != null)
 				{
 					pvm = mapper.Map<PostViewModel>(entry);
+					pvm.PermaLink = dasBlogSettings.RelativeToRoot(pvm.PermaLink);
 					modelViewCreator.AddAllLanguages(pvm);
 					List<CategoryViewModel> allcategories = mapper.Map<List<CategoryViewModel>>(blogManager.GetCategories());
 
@@ -171,31 +191,33 @@ namespace DasBlog.Web.Controllers
 			ValidatePostName(post);
 			if (!ModelState.IsValid)
 			{
-				return View(post);
+				return LocalRedirect(string.Format("~/post/{0}/edit", post.EntryId));
 			}
 
 			if (!string.IsNullOrWhiteSpace(post.NewCategory))
 			{
-				ModelState.AddModelError(nameof(post.NewCategory), 
+				ModelState.AddModelError(nameof(post.NewCategory),
 					$"Please click 'Add' to add the category, \"{post.NewCategory}\" or clear the text before continuing");
-				return View(post);
+				return LocalRedirect(string.Format("~/post/{0}/edit", post.EntryId));
 			}
 			try
 			{
 				var entry = mapper.Map<NBR.Entry>(post);
 				entry.Author = httpContextAccessor.HttpContext.User.Identity.Name;
 				entry.Language = "en-us"; //TODO: We inject this fron http context?
+				entry.ModifiedUtc = DateTime.UtcNow;
 				entry.Latitude = null;
 				entry.Longitude = null;
-				
-				var sts = blogManager.UpdateEntry(entry);
-				if (sts != NBR.EntrySaveState.Updated)
-				{
-					ModelState.AddModelError("", "Failed to edit blog post. Please check Logs for more details.");
-					return View(post);
-				}
 
 				BreakSiteCache();
+
+				var sts = blogManager.UpdateEntry(entry);
+				if (sts == NBR.EntrySaveState.Failed)
+				{
+					ModelState.AddModelError("", "Failed to edit blog post. Please check Logs for more details.");
+					return LocalRedirect(string.Format("~/post/{0}/edit", post.EntryId));
+				}
+
 			}
 			catch (Exception ex)
 			{
@@ -203,7 +225,7 @@ namespace DasBlog.Web.Controllers
 				ModelState.AddModelError("", "Failed to edit blog post. Please check Logs for more details.");
 			}
 
-			return View(post);
+			return LocalRedirect(string.Format("~/post/{0}/edit", post.EntryId));
 		}
 
 		[HttpGet("post/create")]
@@ -251,10 +273,12 @@ namespace DasBlog.Web.Controllers
 				entry.Language = post.Language;
 				entry.Latitude = null;
 				entry.Longitude = null;
+				entry.CreatedUtc = entry.ModifiedUtc = dasBlogSettings.GetCreateTime(post.CreatedDateTime);
 
 				var sts = blogManager.CreateEntry(entry);
 				if (sts != NBR.EntrySaveState.Added)
 				{
+					post.EntryId = entry.EntryId;
 					ModelState.AddModelError("", "Failed to create blog post. Please check Logs for more details.");
 					return View(post);
 				}
@@ -266,13 +290,13 @@ namespace DasBlog.Web.Controllers
 			}
 
 			if (entry != null)
-			{ 
+			{
 				logger.LogInformation(new EventDataItem(EventCodes.EntryAdded, null, "Blog post created: {0}", entry.Title));
 			}
 
 			BreakSiteCache();
 
-			return View("views/blogpost/editPost.cshtml", post);
+			return LocalRedirect(string.Format("~/post/{0}/edit", entry.EntryId));
 		}
 
 		[HttpGet("post/{postid:guid}/delete")]
@@ -370,11 +394,11 @@ namespace DasBlog.Web.Controllers
 						AllowComments = entry.AllowComments
 					};
 
-                    if(comment != null)
-                        lcvm.CurrentComment = comment;
+					if (comment != null)
+						lcvm.CurrentComment = comment;
 					lpvm.Posts.First().Comments = lcvm;
-                    if(errors != null && errors.Count > 0 )
-                        lpvm.Posts.First().ErrorMessages = errors;
+					if (errors != null && errors.Count > 0)
+						lpvm.Posts.First().ErrorMessages = errors;
 				}
 			}
 
@@ -392,7 +416,7 @@ namespace DasBlog.Web.Controllers
 		[HttpPost("post/comments")]
 		public IActionResult AddComment(AddCommentViewModel addcomment)
 		{
-            List<string> errors = new List<string>();
+			List<string> errors = new List<string>();
 
 			if (!ModelState.IsValid)
 			{
@@ -404,45 +428,51 @@ namespace DasBlog.Web.Controllers
 				errors.Add("Comments are disabled on the site.");
 			}
 
+            if(dasBlogSettings.SiteConfiguration.AllowMarkdownInComments)
+            {
+                var pipeline = new MarkdownPipelineBuilder().UseReferralLinks("nofollow").Build();
+                addcomment.Content = Markdown.ToHtml(addcomment.Content, pipeline);
+            }
+
 			// Optional in case of Captcha. Commenting the settings in the config file 
-            // Will disable this check. People will typically disable this when using captcha.
-            if (!String.IsNullOrEmpty(dasBlogSettings.SiteConfiguration.CheesySpamQ) &&
-                !String.IsNullOrEmpty(dasBlogSettings.SiteConfiguration.CheesySpamA) && 
-                dasBlogSettings.SiteConfiguration.CheesySpamQ.Trim().Length > 0 && 
+			// Will disable this check. People will typically disable this when using captcha.
+			if (!string.IsNullOrEmpty(dasBlogSettings.SiteConfiguration.CheesySpamQ) &&
+				!string.IsNullOrEmpty(dasBlogSettings.SiteConfiguration.CheesySpamA) &&
+				dasBlogSettings.SiteConfiguration.CheesySpamQ.Trim().Length > 0 &&
 				dasBlogSettings.SiteConfiguration.CheesySpamA.Trim().Length > 0)
 			{
-				if (string.Compare(addcomment.CheesyQuestionAnswered, dasBlogSettings.SiteConfiguration.CheesySpamA, 
+				if (string.Compare(addcomment.CheesyQuestionAnswered, dasBlogSettings.SiteConfiguration.CheesySpamA,
 					StringComparison.OrdinalIgnoreCase) != 0)
 				{
-                    errors.Add("Answer to Spam Question is invalid. Please enter a valid answer for Spam Question and try again.");
+					errors.Add("Answer to Spam Question is invalid. Please enter a valid answer for Spam Question and try again.");
 				}
 			}
 
-            if(dasBlogSettings.SiteConfiguration.EnableCaptcha)
-            {
-                var recaptchaTask = recaptcha.Validate(Request);
-                recaptchaTask.Wait();
-                var recaptchaResult = recaptchaTask.Result;
-                if ((!recaptchaResult.success || recaptchaResult.score != 0) && 
-                      recaptchaResult.score < dasBlogSettings.SiteConfiguration.RecaptchaMinimumScore )
-                {
-                    errors.Add("Unfinished Captcha. Please finish the captcha by clicking 'I'm not a robot' and try again.");
-                }
-            }
+			if (dasBlogSettings.SiteConfiguration.EnableCaptcha)
+			{
+				var recaptchaTask = recaptcha.Validate(Request);
+				recaptchaTask.Wait();
+				var recaptchaResult = recaptchaTask.Result;
+				if ((!recaptchaResult.success || recaptchaResult.score != 0) &&
+					  recaptchaResult.score < dasBlogSettings.SiteConfiguration.RecaptchaMinimumScore)
+				{
+					errors.Add("Unfinished Captcha. Please finish the captcha by clicking 'I'm not a robot' and try again.");
+				}
+			}
 
 			if (errors.Count > 0)
 			{
 				return CommentError(addcomment, errors);
 			}
 
-			addcomment.Content = dasBlogSettings.FilterHtml(addcomment.Content);
-
 			var commt = mapper.Map<NBR.Comment>(addcomment);
 			commt.AuthorIPAddress = HttpContext.Connection.RemoteIpAddress.ToString();
 			commt.AuthorUserAgent = HttpContext.Request.Headers["User-Agent"].ToString();
-			commt.CreatedUtc = commt.ModifiedUtc = DateTime.UtcNow;
 			commt.EntryId = Guid.NewGuid().ToString();
 			commt.IsPublic = !dasBlogSettings.SiteConfiguration.CommentsRequireApproval;
+			commt.CreatedUtc = commt.ModifiedUtc = DateTime.Now.ToUniversalTime();
+
+			logger.LogInformation(new EventDataItem(EventCodes.CommentAdded, null, "Comment CONTENT DUMP", commt.Content));
 
 			var state = blogManager.AddComment(addcomment.TargetEntryId, commt);
 
@@ -545,7 +575,7 @@ namespace DasBlog.Web.Controllers
 		}
 
 		[AllowAnonymous]
-		[HttpPost("post/search", Name=Constants.SearcherRouteName)]
+		[HttpPost("post/search", Name = Constants.SearcherRouteName)]
 		public IActionResult Search(string searchText)
 		{
 			if (string.IsNullOrWhiteSpace(searchText))
@@ -556,7 +586,7 @@ namespace DasBlog.Web.Controllers
 			var lpvm = new ListPostsViewModel();
 			var entries = blogManager.SearchEntries(WebUtility.HtmlEncode(searchText), Request.Headers["Accept-Language"])?.Where(e => e.IsPublic)?.ToList();
 
-			if (entries != null )
+			if (entries != null)
 			{
 				lpvm.Posts = entries.Select(entry => mapper.Map<PostViewModel>(entry)).ToList();
 				ViewData[Constants.ShowPageControl] = false;
@@ -574,7 +604,7 @@ namespace DasBlog.Web.Controllers
 			ModelState.ClearValidationState("");
 			if (string.IsNullOrWhiteSpace(post.NewCategory))
 			{
-				ModelState.AddModelError(nameof(post.NewCategory), 
+				ModelState.AddModelError(nameof(post.NewCategory),
 					"To add a category you must enter some text in the box next to the 'Add' button before clicking 'Add'");
 				return View(post);
 			}
@@ -582,7 +612,7 @@ namespace DasBlog.Web.Controllers
 			var newCategory = post.NewCategory?.Trim();
 			var newCategoryDisplayName = newCategory;
 			var newCategoryUrl = NBR.Entry.InternalCompressTitle(newCategory);
-					// Category names should not include special characters #200
+			// Category names should not include special characters #200
 			if (post.AllCategories.Any(c => c.CategoryUrl == newCategoryUrl))
 			{
 				ModelState.AddModelError(nameof(post.NewCategory), $"The category, {post.NewCategory}, already exists");
@@ -591,7 +621,7 @@ namespace DasBlog.Web.Controllers
 			{
 				post.AllCategories.Add(new CategoryViewModel { Category = newCategoryDisplayName, CategoryUrl = newCategoryUrl, Checked = true });
 				post.NewCategory = "";
-				ModelState.Remove(nameof(post.NewCategory));	// ensure response refreshes page with view model's value
+				ModelState.Remove(nameof(post.NewCategory));    // ensure response refreshes page with view model's value
 			}
 
 			return View(post);
@@ -603,7 +633,7 @@ namespace DasBlog.Web.Controllers
 			var fileName = post.Image?.FileName;
 			if (string.IsNullOrEmpty(fileName))
 			{
-				ModelState.AddModelError(nameof(post.Image), 
+				ModelState.AddModelError(nameof(post.Image),
 						$"You must select a file before clicking \"{Constants.UploadImageAction}\" to upload it");
 				return View(post);
 			}
@@ -638,7 +668,7 @@ namespace DasBlog.Web.Controllers
 			var dt = ValidatePostDate(post);
 			var entry = blogManager.GetBlogPost(post.Title.Replace(" ", string.Empty), dt);
 
-			if (entry != null && string.Compare(entry.EntryId, post.EntryId, true) > 0 )
+			if (entry != null && string.Compare(entry.EntryId, post.EntryId, true) > 0)
 			{
 				ModelState.AddModelError(string.Empty, "A post with this title already exists. Titles must be unique");
 			}
@@ -675,6 +705,7 @@ namespace DasBlog.Web.Controllers
 		{
 			memoryCache.Remove(CACHEKEY_RSS);
 			memoryCache.Remove(CACHEKEY_FRONTPAGE);
+			memoryCache.Remove(CACHEKEY_ARCHIVE);
 		}
 
 	}

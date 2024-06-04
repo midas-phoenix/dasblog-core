@@ -14,6 +14,8 @@ namespace DasBlog.Services
 		IMetaTags MetaTags { get; set; }
 		ISiteSecurityConfig SecurityConfiguration { get; }
 
+		IOEmbedProviders OEmbedProviders { get; set; }
+
 		string WebRootDirectory { get; }
 
 		string RssUrl { get; }
@@ -47,5 +49,7 @@ namespace DasBlog.Services
 		bool IsAdmin(string gravatarhash);
 		string GeneratePostUrl(Entry entry);
 		SendMailInfo GetMailInfo(MailMessage emailmessage);
+		DateTime GetDisplayTime(DateTime datetime);
+		DateTime GetCreateTime(DateTime datetime);
 	}
 }

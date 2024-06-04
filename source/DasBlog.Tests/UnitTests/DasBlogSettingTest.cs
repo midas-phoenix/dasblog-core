@@ -63,6 +63,7 @@ namespace DasBlog.Tests.UnitTests
 		public ISiteConfig SiteConfiguration { get; set; }
 
 		public ISiteSecurityConfig SecurityConfiguration { get; }
+		public IOEmbedProviders OEmbedProviders { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
 		public string GetBaseUrl()
 		{
@@ -259,6 +260,16 @@ namespace DasBlog.Tests.UnitTests
 		}
 
 		public SendMailInfo GetMailInfo(MailMessage emailmessage)
+		{
+			throw new NotImplementedException();
+		}
+
+		public DateTime GetDisplayTime(DateTime datetime)
+		{
+			throw new NotImplementedException();
+		}
+
+		public DateTime GetCreateTime(DateTime datetime)
 		{
 			throw new NotImplementedException();
 		}

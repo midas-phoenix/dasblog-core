@@ -1,9 +1,14 @@
-﻿using AutoMapper;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using AutoMapper;
+using DasBlog.Core.Common;
 using DasBlog.Managers.Interfaces;
 using DasBlog.Services;
 using DasBlog.Services.ActivityLogs;
 using DasBlog.Services.ConfigFile;
 using DasBlog.Web.Models.AdminViewModels;
+using DasBlog.Web.Models.BlogViewModels;
 using DasBlog.Web.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -41,6 +46,8 @@ namespace DasBlog.Web.Controllers
 			var dbsvm = new DasBlogSettingsViewModel();
 			dbsvm.MetaConfig = mapper.Map<MetaViewModel>(dasBlogSettings.MetaTags);
 			dbsvm.SiteConfig = mapper.Map<SiteViewModel>(dasBlogSettings.SiteConfiguration);
+			dbsvm.Posts = blogManager.GetAllEntries()
+								.Select(entry => mapper.Map<PostViewModel>(entry)).ToList();
 
 			return View(dbsvm);
 		}
@@ -81,6 +88,63 @@ namespace DasBlog.Web.Controllers
 
 			return Settings();
 		}
+
+		[HttpGet]
+		[Route("/admin/manage-comments")]
+		[HttpGet("/admin/manage-comments/{postid}")]
+		public IActionResult ManageComments(string postid)
+		{
+			var comments = new List<CommentAdminViewModel>();
+
+			if (postid != null)
+			{
+				comments = blogManager.GetComments(postid, true).Select(comment => mapper.Map<CommentAdminViewModel>(comment)).ToList();
+				ViewData[Constants.CommentShowPageControl] = false;
+			}
+			else
+			{
+				comments = blogManager.GetCommentsFrontPage().Select(comment => mapper.Map<CommentAdminViewModel>(comment)).ToList();
+				ViewData[Constants.CommentShowPageControl] = true;
+			}
+
+			foreach (var cmt in comments)
+			{
+				cmt.Title = blogManager.GetBlogPostByGuid(new Guid(cmt.BlogPostId))?.Title;
+			}
+
+			ViewData[Constants.CommentPageNumber] = 0;
+			ViewData[Constants.CommentPostCount] = 5;
+			return View(comments.OrderByDescending(d => d.Date).ToList());
+		}
+
+		[HttpGet]
+		[Route("/admin/manage-comments/page")]
+		[HttpGet("/admin/manage-comments/page/{page}")]
+		public IActionResult ManageCommentsByPage(int page) 
+		{
+			var comments = new List<CommentAdminViewModel>();
+
+			if (page > 0)
+			{
+				comments = blogManager.GetCommentsForPage(page).Select(comment => mapper.Map<CommentAdminViewModel>(comment)).ToList();
+			}
+			else
+			{
+				comments = blogManager.GetCommentsFrontPage().Select(comment => mapper.Map<CommentAdminViewModel>(comment)).ToList();
+			}
+
+			foreach (var cmt in comments)
+			{
+				cmt.Title = blogManager.GetBlogPostByGuid(new Guid(cmt.BlogPostId))?.Title;
+			}
+
+			ViewData[Constants.CommentShowPageControl] = true;
+			ViewData[Constants.CommentPostCount] = 5;
+			ViewData[Constants.CommentPageNumber] = page;
+
+			return View("ManageComments", comments.OrderByDescending(d => d.Date).ToList());
+		}
+
 		public IActionResult TestEmail()
 		{
 			if (!blogManager.SendTestEmail())

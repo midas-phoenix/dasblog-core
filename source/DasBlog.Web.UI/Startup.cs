@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using Coravel;
 using DasBlog.Core.Common;
 using DasBlog.Managers;
 using DasBlog.Managers.Interfaces;
@@ -29,7 +30,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Quartz;
 using System;
 using System.IO;
 using System.Linq;
@@ -40,6 +40,7 @@ using reCAPTCHA.AspNetCore;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Net.Http.Headers;
 using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace DasBlog.Web
 {
@@ -53,13 +54,16 @@ namespace DasBlog.Web
 		private readonly string LogFolderPath;
 		private readonly string BinariesPath;
 		private readonly string BinariesUrlRelativePath;
+		private readonly string OEmbedProvidersPath;
 
 		private readonly string DefaultSiteConfigPath;
 		private readonly string DefaultMetaConfigPath;
+		private readonly string DefaultOEmbedProvidersConfigPath;
 		private readonly string DefaultSiteSecurityConfigPath;
 		private readonly string DefaultIISUrlRewriteConfigPath;
 
 		private readonly IWebHostEnvironment hostingEnvironment;
+		
 
 		public IConfiguration Configuration { get; }
 
@@ -76,6 +80,7 @@ namespace DasBlog.Web
 			DefaultSiteConfigPath = Path.Combine("Config", $"site.config");
 			MetaConfigPath = Path.Combine("Config", $"meta.{env.EnvironmentName}.config");
 			DefaultMetaConfigPath = Path.Combine("Config", $"meta.config");
+			OEmbedProvidersPath = DefaultOEmbedProvidersConfigPath = Path.Combine("Config", $"oembed-providers.json");
 
 			ConfigFileInitializationPrep();
 
@@ -87,6 +92,7 @@ namespace DasBlog.Web
 				.AddXmlFile(MetaConfigPath, optional: true, reloadOnChange: true)
 				.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
 				.AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true)
+				.AddJsonFile(DefaultOEmbedProvidersConfigPath, optional: true, reloadOnChange: true)
 				.AddEnvironmentVariables();
 
 			Configuration = builder.Build();
@@ -96,7 +102,7 @@ namespace DasBlog.Web
 			LogFolderPath = new DirectoryInfo(Path.Combine(env.ContentRootPath, Configuration.GetSection("LogDir").Value)).FullName;
 			BinariesUrlRelativePath = "content/binary";
 		}
-		
+
 		// This method gets called by the runtime. Use this method to add services to the container.
 		public void ConfigureServices(IServiceCollection services)
 		{
@@ -114,12 +120,14 @@ namespace DasBlog.Web
 			services.Configure<TimeZoneProviderOptions>(Configuration);
 			services.Configure<SiteConfig>(Configuration);
 			services.Configure<MetaTags>(Configuration);
+			services.Configure<OEmbedProviders>(Configuration);
 			services.AddSingleton<AppVersionInfo>();
 
 			services.Configure<ConfigFilePathsDataOption>(options =>
 			{
 				options.SiteConfigFilePath = Path.Combine(hostingEnvironment.ContentRootPath, SiteConfigPath);
 				options.MetaConfigFilePath = Path.Combine(hostingEnvironment.ContentRootPath, MetaConfigPath);
+				options.OEmbedProvidersFilePath = Path.Combine(hostingEnvironment.ContentRootPath, OEmbedProvidersPath);
 				options.SecurityConfigFilePath = Path.Combine(hostingEnvironment.ContentRootPath, SiteSecurityConfigPath);
 				options.IISUrlRewriteFilePath = Path.Combine(hostingEnvironment.ContentRootPath, IISUrlRewriteConfigPath);
 				options.ThemesFolder = ThemeFolderPath;
@@ -146,16 +154,21 @@ namespace DasBlog.Web
 
 			services.ConfigureApplicationCookie(options =>
 			{
-				options.LoginPath = "/account/login"; // If the LoginPath is not set here, ASP.NET Core will default to /Account/Login
-				options.LogoutPath = "/account/logout"; // If the LogoutPath is not set here, ASP.NET Core will default to /Account/Logout
-				options.AccessDeniedPath = "/account/accessdenied"; // If the AccessDeniedPath is not set here, ASP.NET Core will default to /Account/AccessDenied
-				options.SlidingExpiration = true;
 				options.ExpireTimeSpan = TimeSpan.FromSeconds(10000);
-				options.Cookie = new CookieBuilder
-				{
-					HttpOnly = true
-				};
 			});
+
+			services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+					.AddCookie(options =>
+					{
+						options.LoginPath = "/account/login"; // If the LoginPath is not set here, ASP.NET Core will default to /Account/Login
+						options.LogoutPath = "/account/logout"; // If the LogoutPath is not set here, ASP.NET Core will default to /Account/Logout
+						options.AccessDeniedPath = "/account/accessdenied"; // If the AccessDeniedPath is not set here, ASP.NET Core will default to /Account/AccessDenied
+						options.SlidingExpiration = true;
+						options.Cookie = new CookieBuilder
+						{
+							HttpOnly = true
+						};
+					});
 
 			services.AddResponseCaching();
 
@@ -163,7 +176,7 @@ namespace DasBlog.Web
 			{
 				rveo.ViewLocationExpanders.Add(new DasBlogLocationExpander(Configuration.GetSection("Theme").Value));
 			});
-			
+
 			services.AddSession(options =>
 			{
 				options.IdleTimeout = TimeSpan.FromSeconds(1000);
@@ -171,6 +184,9 @@ namespace DasBlog.Web
 
 			services
 				.AddHttpContextAccessor();
+
+			services.AddScheduler();
+			services.AddTransient<SiteEmailReport>();
 
 			services
 				.AddTransient<IDasBlogSettings, DasBlogSettings>()
@@ -190,7 +206,9 @@ namespace DasBlog.Web
 				.AddSingleton<ISiteSecurityManager, SiteSecurityManager>()
 				.AddSingleton<IXmlRpcManager, XmlRpcManager>()
 				.AddSingleton<ISiteManager, SiteManager>()
+				.AddSingleton<IActivityPubManager, ActivityPubManager>()
 				.AddSingleton<IHttpContextAccessor, HttpContextAccessor>()
+				.AddSingleton<SiteHttpContext>()
 				.AddSingleton<IFileSystemBinaryManager, FileSystemBinaryManager>()
 				.AddSingleton<IUserDataRepo, UserDataRepo>()
 				.AddSingleton<ISiteSecurityConfig, SiteSecurityConfig>()
@@ -201,15 +219,21 @@ namespace DasBlog.Web
 				.AddSingleton<ITimeZoneProvider, TimeZoneProvider>()
 				.AddSingleton<ISubscriptionManager, SubscriptionManager>()
 				.AddSingleton<IConfigFileService<MetaTags>, MetaConfigFileService>()
+				.AddSingleton<IConfigFileService<OEmbedProviders>, OEmbedProvidersFileService>()
 				.AddSingleton<IConfigFileService<SiteConfig>, SiteConfigFileService>()
 				.AddSingleton<IConfigFileService<SiteSecurityConfigData>, SiteSecurityConfigFileService>();
-		
+
+			services.AddSingleton<IExternalEmbeddingHandler, ExternalEmbeddingHandler>();
+
+
 			services
 				.AddAutoMapper((serviceProvider, mapperConfig) =>
 				{
 					mapperConfig.AddProfile(new ProfilePost(serviceProvider.GetService<IDasBlogSettings>()));
 					mapperConfig.AddProfile(new ProfileDasBlogUser(serviceProvider.GetService<ISiteSecurityManager>()));
 					mapperConfig.AddProfile(new ProfileSettings());
+					mapperConfig.AddProfile(new ProfileActivityPub());
+					mapperConfig.AddProfile(new ProfileStaticPage());
 				})
 				.AddMvc()
 				.AddXmlSerializerFormatters();
@@ -217,11 +241,11 @@ namespace DasBlog.Web
 			services
 				.AddControllersWithViews()
 				.AddRazorRuntimeCompilation();
-            
-            services.AddRecaptcha(options =>
-            {
-                options.SiteKey = Configuration.GetSection("RecaptchaSiteKey").Value; 
-                options.SecretKey = Configuration.GetSection("RecaptchaSecretKey").Value;
+
+			services.AddRecaptcha(options =>
+			{
+				options.SiteKey = Configuration.GetSection("RecaptchaSiteKey").Value;
+				options.SecretKey = Configuration.GetSection("RecaptchaSecretKey").Value;
 			});
 
 			services.Configure<CookiePolicyOptions>(options =>
@@ -231,47 +255,7 @@ namespace DasBlog.Web
 				options.CheckConsentNeeded = context => flag;
 				options.MinimumSameSitePolicy = SameSiteMode.None;
 			});
-
-			services.AddQuartz(q =>
-			{
-				q.SchedulerId = "Scheduler-Core";
-
-				q.UseMicrosoftDependencyInjectionJobFactory(options =>
-				{
-					// if we don't have the job in DI, allow fallback to configure via default constructor
-					options.AllowDefaultConstructor = true;
-				});
-
-				q.UseSimpleTypeLoader();
-				q.UseInMemoryStore();
-				q.UseDefaultThreadPool(tp =>
-				{
-					tp.MaxConcurrency = 10;
-				});
-
-				var jobKey = new JobKey("key1", "main-group");
-
-				q.AddJob<SiteEmailReport>(j => j
-					.StoreDurably()
-					.WithIdentity(jobKey)
-					.WithDescription("Site report job")
-				);
-
-				q.AddTrigger(t => t
-					.WithIdentity("Simple Trigger")
-					.ForJob(jobKey)
-					.StartNow()
-					.WithSchedule(CronScheduleBuilder.DailyAtHourAndMinute(23, 45))
-					.WithDescription("my awesome simple trigger")
-
-				);
-			});
-
-			services.AddQuartzServer(options =>
-			{
-				options.WaitForJobsToComplete = true;
-			});
-        }
+		}
 
 		// This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
 		public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IDasBlogSettings dasBlogSettings)
@@ -293,6 +277,14 @@ namespace DasBlog.Web
 				app.UseHsts(options => options.MaxAge(days: 30));
 			}
 
+			app.ApplicationServices.UseScheduler(scheduler =>
+			{
+				scheduler
+					.Schedule<SiteEmailReport>()
+					.DailyAt(23, 19)
+					.Zoned(TimeZoneInfo.Local);
+			});
+
 			if (!siteOk)
 			{
 				app.Run(async context => await context.Response.WriteAsync(siteError));
@@ -306,8 +298,12 @@ namespace DasBlog.Web
 			app.UseRouting();
 
 			//if you've configured it at /blog or /whatever, set that pathbase so ~ will generate correctly
-			var rootUri = new Uri(dasBlogSettings.SiteConfiguration.Root);
-			var path = rootUri.AbsolutePath;
+			var path = "/";
+			if (!string.IsNullOrWhiteSpace(dasBlogSettings.SiteConfiguration.Root))
+			{
+				var rootUri = new Uri(dasBlogSettings.SiteConfiguration.Root);
+				path = rootUri.AbsolutePath;
+			}
 
 			//Deal with path base and proxies that change the request path
 			if (path != "/")
@@ -320,7 +316,7 @@ namespace DasBlog.Web
 			}
 
 			app.UseForwardedHeaders();
-			
+
 			app.UseStaticFiles();
 			app.UseCookiePolicy();
 
@@ -380,13 +376,14 @@ namespace DasBlog.Web
 
 			var SecurityScriptSources = Configuration.GetSection("SecurityScriptSources")?.Value?.Split(";");
 			var SecurityStyleSources = Configuration.GetSection("SecurityStyleSources")?.Value?.Split(";");
+			var DefaultSources = Configuration.GetSection("DefaultSources")?.Value?.Split(";");
 
-			if (SecurityStyleSources != null && SecurityScriptSources != null)
+			if (SecurityStyleSources != null && SecurityScriptSources != null && DefaultSources != null)
 			{
 				app.UseCsp(options => options
 					.DefaultSources(s => s.Self()
-						.CustomSources("data:")
-						.CustomSources("https:"))
+						.CustomSources(DefaultSources)
+						)
 					.StyleSources(s => s.Self()
 						.CustomSources(SecurityStyleSources)
 						.UnsafeInline()
@@ -401,8 +398,6 @@ namespace DasBlog.Web
 
 			app.Use(async (context, next) =>
 			{
-				//w3c draft
-				context.Response.Headers.Add("Feature-Policy", "geolocation 'none';midi 'none';sync-xhr 'none';microphone 'none';camera 'none';magnetometer 'none';gyroscope 'none';fullscreen 'self';payment 'none';");
 				//being renamed/changed to this soon
 				context.Response.Headers.Add("Permissions-Policy", "geolocation=(),midi=(),sync-xhr=(),microphone=(),camera=(),magnetometer=(),gyroscope=(),fullscreen=(self),payment=()");
 				await next.Invoke();
@@ -413,7 +408,7 @@ namespace DasBlog.Web
 			app.UseEndpoints(endpoints =>
 			{
 				endpoints.MapHealthChecks("/healthcheck");
-				
+
 				if (dasBlogSettings.SiteConfiguration.EnableTitlePermaLinkUnique)
 				{
 					endpoints.MapControllerRoute(
@@ -424,7 +419,7 @@ namespace DasBlog.Web
 					endpoints.MapControllerRoute(
 						"New Post Format",
 						"~/{year:int}/{month:int}/{day:int}/{posttitle}",
-						new { controller = "BlogPost", action = "Post", postitle = ""  });
+						new { controller = "BlogPost", action = "Post", postitle = "" });
 				}
 				else
 				{
@@ -436,12 +431,14 @@ namespace DasBlog.Web
 					endpoints.MapControllerRoute(
 						"New Post Format",
 						"~/{posttitle}",
-						new { controller = "BlogPost", action = "Post", postitle = ""  });
+						new { controller = "BlogPost", action = "Post", postitle = "" });
 
 				}
 				endpoints.MapControllerRoute(
 					name: "default", "~/{controller=Home}/{action=Index}/{id?}");
 			});
+
+			app.UseHttpContext();
 		}
 
 		/// <summary>
@@ -484,10 +481,10 @@ namespace DasBlog.Web
 			switch (entryEditControl)
 			{
 				case Constants.TinyMceEditor:
-					richEditBuilder = new TinyMceBuilder();
+					richEditBuilder = new TinyMceBuilder(serviceProvider.GetService<IDasBlogSettings>());
 					break;
 				case Constants.NicEditEditor:
-					richEditBuilder = new NicEditBuilder();
+					richEditBuilder = new NicEditBuilder(serviceProvider.GetService<IDasBlogSettings>());
 					break;
 				case Constants.TextAreaEditor:
 					richEditBuilder = new TextAreaBuilder();

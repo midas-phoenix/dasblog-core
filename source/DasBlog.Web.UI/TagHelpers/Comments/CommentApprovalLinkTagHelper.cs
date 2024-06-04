@@ -9,9 +9,10 @@ namespace DasBlog.Web.TagHelpers.Comments
 	{
 		public CommentViewModel Comment { get; set; }
 
+		public bool Admin { get; set; } = false;
+
 		private readonly IDasBlogSettings dasBlogSettings;
 
-		private const string COMMENTAPPROVE_URL = "{0}/comments/{1}";
 		private const string COMMENTTEXT_MSG = "Are you sure you want to approve the comment from '{0}'?";
 
 		public CommentApprovalLinkTagHelper(IDasBlogSettings dasBlogSettings)
@@ -19,28 +20,35 @@ namespace DasBlog.Web.TagHelpers.Comments
 			this.dasBlogSettings = dasBlogSettings;
 		}
 
-		public override void Process(TagHelperContext context, TagHelperOutput output)
+		public override async Task ProcessAsync(TagHelperContext context, TagHelperOutput output)
 		{
-			var approvalurl = string.Format(COMMENTAPPROVE_URL, dasBlogSettings.GetPermaLinkUrl(Comment.BlogPostId), Comment.CommentId);
 			var commenttxt = string.Format(COMMENTTEXT_MSG, Comment.Name);
 			var message = "Comment Approved";
 
 			output.TagName = "a";
 			output.TagMode = TagMode.StartTagAndEndTag;
-			output.Attributes.SetAttribute("href", $"javascript:commentManagement(\"{approvalurl}\",\"{commenttxt}\",\"PATCH\")");
+			output.Attributes.SetAttribute("href", $"javascript:commentManagement(\"{Comment.BlogPostId}\",\"{Comment.CommentId}\",\"{commenttxt}\",\"PATCH\")");
 			output.Attributes.SetAttribute("class", "dbc-comment-approve-link");
 
-			if (Comment.SpamState != SpamStateViewModel.NotSpam)
+			var content = await output.GetChildContentAsync();
+
+			if(string.IsNullOrWhiteSpace(content.GetContent()))
 			{
-				message = "Approve this comment";
+				if (Comment.SpamState != SpamStateViewModel.NotSpam)
+				{
+					message = "Approve this comment";
+				}
+				else
+				{
+					message = "Comment Approved";
+				}
+			}
+			else
+			{
+				message = content.GetContent().Trim();
 			}
 
 			output.Content.SetHtmlContent(message);
-		}
-
-		public override Task ProcessAsync(TagHelperContext context, TagHelperOutput output)
-		{
-			return Task.Run(() => Process(context, output));
 		}
 	}
 }
